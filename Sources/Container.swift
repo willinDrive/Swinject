@@ -25,7 +25,6 @@ public final class Container {
     private var resolutionDepth = 0
     private let debugHelper: DebugHelper
     private let defaultObjectScope: ObjectScope
-    private let synchronized: Bool
     internal var currentObjectGraph: GraphIdentifier?
     internal let lock: RecursiveLock // Used by SynchronizedResolver.
     internal var behaviors = [Behavior]()
@@ -33,14 +32,12 @@ public final class Container {
     internal init(
         parent: Container? = nil,
         debugHelper: DebugHelper,
-        defaultObjectScope: ObjectScope = .graph,
-        synchronized: Bool = false
+        defaultObjectScope: ObjectScope = .graph
     ) {
         self.parent = parent
         self.debugHelper = debugHelper
         lock = parent.map { $0.lock } ?? RecursiveLock()
         self.defaultObjectScope = defaultObjectScope
-        self.synchronized = synchronized
     }
 
     /// Instantiates a ``Container``
@@ -154,20 +151,6 @@ public final class Container {
         return entry
     }
 
-    /// Returns a synchronized view of the container for thread safety.
-    /// The returned container is ``Resolver`` type and is not the original container. Continuing to add more
-    /// registrations after calling `synchronize()` will result in different graph scope.
-    ///
-    /// It is recommended to call this method after you finish all service registrations to the original container.
-    ///
-    /// - Returns: A synchronized container as ``Resolver``.
-    public func synchronize() -> Resolver {
-        return Container(parent: self,
-                         debugHelper: debugHelper,
-                         defaultObjectScope: defaultObjectScope,
-                         synchronized: true)
-    }
-
     /// Adds behavior to the container. `Behavior.container(_:didRegisterService:withName:)` will be invoked for
     /// each service registered to the `container` **after** the behavior has been added.
     ///
@@ -251,11 +234,7 @@ extension Container: _Resolver {
                     }
                     return self?.resolve(entry: entry, invoker: invoker) as Any?
                 }
-                if self?.synchronized ?? true {
-                    return self?.lock.sync(action: action)
-                } else {
-                    return action()
-                }
+                return self?.lock.sync(action: action)
             }
             return wrapper.init(inContainer: self, withInstanceFactory: factory) as? Wrapper
         } else {
@@ -362,11 +341,7 @@ extension Container: Resolver {
 
             return resolvedInstance as? Service
         }
-        if synchronized {
-            return lock.sync {
-                return resolution()
-            }
-        } else {
+        return lock.sync {
             return resolution()
         }
     }
